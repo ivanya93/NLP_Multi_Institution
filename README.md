@@ -40,8 +40,8 @@ Raw OCIP PDFs contain real institution names and NIFs and are **not committed to
 ├── data/
 │   ├── PDF_files/                # Raw OCIP PDFs (git-ignored)
 │   └── outputs/                  # Anonymized CSVs consumed by the app
-├── requirements-app.txt          # Minimal deps to run the Streamlit app
-└── requirements.txt              # Full environment freeze (notebook/pipeline dev)
+├── requirements.txt              # Deps to run the Streamlit app (used by Streamlit Cloud)
+└── requirements-notebook.txt     # Full environment freeze (notebook/pipeline dev)
 ```
 
 ## Setup
@@ -49,7 +49,7 @@ Raw OCIP PDFs contain real institution names and NIFs and are **not committed to
 ```bash
 git clone <this-repo>
 cd NLP_Multi_Institution
-pip install -r requirements-app.txt
+pip install -r requirements.txt
 ```
 
 Add your Anthropic API key to `.streamlit/secrets.toml` (not committed):
@@ -74,6 +74,10 @@ python pipeline.py data/PDF_files data/outputs
 ```
 
 (Scanned/no-text-layer PDFs require the system Tesseract OCR engine with the Portuguese language pack: `tesseract-ocr` + `tesseract-ocr-por`.)
+
+## Deploying on Streamlit Community Cloud
+
+Point the deployment at this repo with **main file path** `app.py`. Streamlit Cloud installs from `requirements.txt` automatically. Add `ANTHROPIC_API_KEY` under the app's **Settings → Secrets** (same TOML format as `.streamlit/secrets.toml`, which is not committed to the repo).
 
 ## Team / course
 

@@ -1,9 +1,0 @@
-# Minimal dependencies for the Streamlit app (rename to requirements.txt
-# for Streamlit Cloud deployment; keep the full freeze for the notebook env).
-streamlit
-pandas
-numpy
-anthropic
-# Only needed if you re-run the extraction pipeline (not the app itself):
-# pdfplumber
-# pytesseract
