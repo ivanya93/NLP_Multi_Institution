@@ -41,6 +41,7 @@ TRANSLATIONS = {
         ),
         "year_label": "Year",
         "institution_filter_label": "Institution",
+        "multiselect_placeholder": "Choose options",
         "activity_group_label": "Activity Group",
         "activity_group_values": {"Idosos": "Seniors", "Infância": "Childhood"},
         "resposta_social_values": {
@@ -59,7 +60,7 @@ TRANSLATIONS = {
             "Pre-school Education Centre": "Pre-school \nEducation Centre",
         },
         "social_response_label": "Social response",
-        "region_label": "Region (concelho)",
+        "region_label": "Region (Municipality)",
         "coverage_header": "Coverage",
         "institutions_metric": "Institutions",
         "records_metric": "Social-response records",
@@ -191,6 +192,7 @@ TRANSLATIONS = {
         ),
         "year_label": "Ano",
         "institution_filter_label": "Instituição",
+        "multiselect_placeholder": "Escolher opção",
         "activity_group_label": "Grupo de Atividade",
         "activity_group_values": {"Idosos": "Idosos", "Infância": "Infância"},
         "resposta_social_values": {
@@ -210,7 +212,7 @@ TRANSLATIONS = {
             "Serviço De Apoio Domiciliário": "Serviço De Apoio \nDomiciliário",
         },
         "social_response_label": "Resposta social",
-        "region_label": "Região (concelho)",
+        "region_label": "Região (Concelho)",
         "coverage_header": "Cobertura",
         "institutions_metric": "Instituições",
         "records_metric": "Registos por resposta social",

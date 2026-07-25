@@ -39,6 +39,52 @@ def titlecase_pt(text):
         for i, w in enumerate(words)
     )
 
+
+def _remove_chip(session_key, item):
+    """on_click callback for a chip's × button: drop just that one value
+    from the given multiselect's selection (safe to mutate session_state
+    here, since callbacks run before the widget re-instantiates)."""
+    st.session_state[session_key] = [
+        x for x in st.session_state[session_key] if x != item
+    ]
+
+
+def chip_multiselect(label, options, session_key, placeholder):
+    """A multiselect whose own selected-item pills are hidden in favor of a
+    wrapping chip row below it — each chip has a working × (removes just
+    that value) instead of the pills piling up inside the box. A CSS
+    ::before keeps showing the placeholder text even once something is
+    selected (hiding the pills would otherwise leave the box looking
+    empty)."""
+    box_key = f"{session_key}_box"
+    box = st.container(key=box_key)
+    with box:
+        selected = st.multiselect(
+            label, options, default=options, key=session_key, placeholder=placeholder,
+        )
+    # The ::before placeholder-text rule (shared CSS block below) needs the
+    # actual placeholder string, which varies by language, so it's injected
+    # here per box instead of hardcoded in that static block.
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{box_key} [data-baseweb="select"] > div > div:first-child:has([data-baseweb="tag"])::before {{
+            content: "{placeholder}";
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if selected:
+        chip_row = st.container(key=f"{session_key}_chip_row")
+        with chip_row:
+            for item in selected:
+                st.button(
+                    f"{item}  ×", key=f"{session_key}_chip_remove_{item}",
+                    on_click=_remove_chip, args=(session_key, item),
+                )
+    return selected
+
 # ---------------------------------------------------------------- page config
 st.set_page_config(
     page_title="IPSS Financial Observatory",
@@ -64,6 +110,44 @@ st.markdown(
         border: 1px solid rgba(128, 128, 128, 0.25);
         border-radius: 8px;
         padding: 12px 16px;
+    }
+
+    /* chip_multiselect() filters (Year, Institution, Activity Group, Social
+       response): hide the multiselect's own selected-item pills — the chip
+       row below (with working × removal) replaces them. Those pills are
+       <span data-baseweb="tag">, not <div>, hence no tag-name filter. The
+       [class*=...] substring match covers every "<key>_select_box"
+       container without listing each filter's key individually. */
+    [class*="_select_box"] [data-baseweb="tag"] {
+        display: none !important;
+    }
+    [class*="_select_box"] [data-baseweb="select"] > div > div:first-child::before {
+        color: var(--text-color);
+        opacity: 0.6;
+        font-size: 0.875rem;
+        padding-left: 8px;
+        white-space: nowrap;
+    }
+
+    /* Same filters: lay their chip rows out horizontally, wrapping onto new
+       lines as needed, instead of Streamlit's default vertical stack. */
+    [class*="_select_chip_row"] {
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 0.25rem 0.75rem !important;
+    }
+    [class*="_select_chip_row"] button {
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-size: 0.875rem;
+        color: var(--text-color);
+        opacity: 0.55;
+    }
+    [class*="_select_chip_row"] button:hover {
+        opacity: 0.9;
+        color: var(--primary-color);
+        background: transparent;
     }
     </style>
     """,
@@ -136,6 +220,28 @@ lang = st.session_state.lang
 t = TRANSLATIONS[lang]          # shorthand: t["some_key"] -> label in the active language
 KPI_LABELS = t["kpi_labels"]    # KPI column name -> human-readable label, in that language
 
+# Activity Group and Social response are the only two filters whose actual
+# option *values* (not just their labels) change with the language. Without
+# this, switching language leaves their multiselect's session_state holding
+# values from the old language (e.g. "Seniors") that don't match the new
+# language's options (e.g. "Idosos") — Streamlit then silently drops them,
+# clearing the filter. Remap each selected value from the old language back
+# to its canonical Portuguese key, then forward into the new language.
+_prev_lang = st.session_state.get("_prev_lang")
+if _prev_lang is not None and _prev_lang != lang:
+    _old_t = TRANSLATIONS[_prev_lang]
+    for _key, _value_map_name in [
+        ("f_groups_select", "activity_group_values"),
+        ("f_resp_select", "resposta_social_values"),
+    ]:
+        if _key in st.session_state:
+            _reverse = {v: k for k, v in _old_t[_value_map_name].items()}
+            _forward = t[_value_map_name]
+            st.session_state[_key] = [
+                _forward.get(_reverse.get(v, v), v) for v in st.session_state[_key]
+            ]
+st.session_state["_prev_lang"] = lang
+
 try:
     kpi_df, raw_df = load_data()
 except FileNotFoundError:
@@ -171,13 +277,19 @@ with st.sidebar:
     kpi_df["monthly_social_security_funding_per_beneficiary"] = kpi_df[_fund_col]
     kpi_df["funding_coverage"] = kpi_df[_fund_col] / kpi_df["monthly_cost_per_beneficiary"]
 
-    # pipeline.py always writes the Portuguese social-response names; swap in
-    # the EN translations here so every filter, chart and table downstream
-    # picks them up automatically (PT values are left unchanged).
+    # pipeline.py always writes the Portuguese social-response and activity-
+    # group names; swap in the EN translations here so every filter, chart
+    # and table downstream picks them up automatically (PT values are left
+    # unchanged).
     kpi_df["resposta_social_clean"] = (
         kpi_df["resposta_social_clean"]
         .map(t["resposta_social_values"])
         .fillna(kpi_df["resposta_social_clean"])
+    )
+    kpi_df["activity_group"] = (
+        kpi_df["activity_group"]
+        .map(t["activity_group_values"])
+        .fillna(kpi_df["activity_group"])
     )
 
     # Build each filter's option list from the data itself (not hardcoded),
@@ -189,11 +301,25 @@ with st.sidebar:
     responses = sorted(kpi_df["resposta_social_clean"].dropna().unique())
     concelhos = sorted(kpi_df["concelho"].dropna().unique())
 
-    f_years = st.multiselect(t["year_label"], years, default=years)
-    f_inst = st.multiselect(t["institution_filter_label"], institutions, default=institutions)
-    f_groups = st.multiselect(t["activity_group_label"], groups, default=groups)
-    f_resp = st.multiselect(t["social_response_label"], responses, default=responses)
-    f_conc = st.multiselect(t["region_label"], concelhos, default=concelhos)
+    # All five filters use the chip variant (see chip_multiselect above)
+    # since their pill count can get long enough to be worth wrapping into
+    # their own row below the box.
+    f_years = chip_multiselect(
+        t["year_label"], years, "f_years_select", t["multiselect_placeholder"],
+    )
+    f_inst = chip_multiselect(
+        t["institution_filter_label"], institutions, "f_inst_select",
+        t["multiselect_placeholder"],
+    )
+    f_groups = chip_multiselect(
+        t["activity_group_label"], groups, "f_groups_select", t["multiselect_placeholder"],
+    )
+    f_resp = chip_multiselect(
+        t["social_response_label"], responses, "f_resp_select", t["multiselect_placeholder"],
+    )
+    f_conc = chip_multiselect(
+        t["region_label"], concelhos, "f_conc_select", t["multiselect_placeholder"],
+    )
 
     # All five filters apply together (AND, not OR) — e.g. picking one
     # institution AND one year shows only that institution's records for
@@ -311,9 +437,6 @@ with tab_overview:
             "monthly_fee_per_beneficiary": t["series_fees"],
         })
     )
-    # pipeline.py only ever writes the Portuguese "Idosos"/"Infância" labels
-    # (it isn't bilingual), so translate them for the EN UI here.
-    grp["activity_group"] = grp["activity_group"].map(t["activity_group_values"])
     grp_long = grp.melt(
         id_vars="activity_group", var_name="series", value_name="value",
         value_vars=[t["series_cost"], t["series_funding"], t["series_fees"]],
