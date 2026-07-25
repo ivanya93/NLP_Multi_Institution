@@ -1,0 +1,24 @@
+# Secrets — never commit API keys
+.streamlit/secrets.toml
+
+# Raw OCIP PDFs contain real institution names/NIFs (not anonymized).
+# The processed outputs (data/outputs/*.csv) are anonymized and safe to commit.
+data/PDF_files/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+
+# Chat session exports (personal working notes, not project deliverables)
+insights/
+ouputs/
