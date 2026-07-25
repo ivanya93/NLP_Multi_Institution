@@ -2,6 +2,8 @@
 
 Extracts KPIs from Portuguese IPSS financial filings (OCIP) and presents them in a bilingual (EN/PT) Streamlit dashboard with an AI assistant — a Natural Language Processing group project for the Executive Master in Business Analytics & AI at Porto Business School.
 
+**Live app:** _add the Streamlit Cloud URL here once deployed, e.g. `https://nlp-multi-institution.streamlit.app`_
+
 ## Context
 
 [CNIS](https://cnis.pt) represents IPSS (Instituições Particulares de Solidariedade Social) in Portugal and negotiates with the Ministry of Labour, Solidarity and Social Security over the public funding these institutions receive per social response (*resposta social* — e.g. elderly care, childcare), under the *Compromisso de Cooperação para o Setor Social e Solidário*.
@@ -14,6 +16,21 @@ To ground those negotiations in data, this project extracts financial statements
 2. **KPI dashboard** (`app.py`) — a Streamlit app with filters (year, institution, activity group, social response, region) and six views: Overview, By Social Response, By Region, Institution Explorer, AI Assistant, and raw Data.
 3. **AI assistant** (`data_agent.py`) — a Claude-powered chatbot with tools over the live KPI table, for ad-hoc questions and for generating negotiation talking points against the funding-coverage target.
 4. **Bilingual UI** (`i18n.py`) — a sidebar toggle switches the entire dashboard and the assistant's answer language between English and European Portuguese.
+
+## Features
+
+**Bilingual dashboard, six tabs** — everything below respects the sidebar filters (year, institution, activity group, social response, region) and the funding-basis toggle, so every tab always reflects the same slice of data.
+
+- **Overview** — headline KPI cards (median cost, median SS funding, funding coverage vs. the 50% target, EBITDA), a chart ranking each social response by how close it is to the funding target, a cost-vs-funding-vs-fees breakdown by activity group, and a plain-language "structural deficit" flag (how many records are losing money per beneficiary today).
+- **By Social Response** — pick any KPI and see its full spread (not just an average) across social responses (Creche, ERPI, Centro de Dia, etc.), plus a summary-statistics table.
+- **By Region** — the same KPI picker, but by concelho (region), plus a region × social-response matrix for spotting geographic gaps.
+- **Institution Explorer** — drill into one (anonymized) institution: its region, year, and a full KPI breakdown per social response it runs, exportable on its own.
+- **AI Assistant** — a Claude-powered chatbot with real data access (not a static Q&A): ask it KPI questions in plain English or Portuguese, or ask it to draft negotiation talking points, and it looks up the real numbers before answering. Includes one-click suggested questions and a "download this conversation" button.
+- **Data** — the full filtered KPI table and the complete raw extraction, for anyone who wants the numbers directly.
+
+**Two funding-coverage views** — a sidebar toggle switches between the standard Mapa A "ISS, IP" P&L lines and an "authoritative" measure built from the dedicated Comparticipações page (which catches funding booked under other line items — about half the institutions). This matters because it changes the headline coverage number materially, and both are legitimate readings of the same underlying filings.
+
+**One-click exports** — filtered KPI table, full raw data, a single institution's records, or the AI assistant's conversation, all downloadable as CSV/TXT directly from the sidebar or the relevant tab.
 
 ## KPIs
 
@@ -78,6 +95,7 @@ python pipeline.py data/PDF_files data/outputs
 ## Deploying on Streamlit Community Cloud
 
 Point the deployment at this repo with **main file path** `app.py`. Streamlit Cloud installs from `requirements.txt` automatically. Add `ANTHROPIC_API_KEY` under the app's **Settings → Secrets** (same TOML format as `.streamlit/secrets.toml`, which is not committed to the repo).
+
 
 ## Team / course
 

@@ -1,3 +1,33 @@
+"""Multi-institution OCIP "Conta de Gerência" extraction + KPI pipeline.
+
+WHAT THIS FILE DOES (plain language)
+-------------------------------------
+Institutions send Social Security a PDF called an OCIP ("Conta de
+Gerência") every year: a multi-page financial report broken down by each
+social service they run (elderly care, childcare, etc. — a "resposta
+social"). This script reads a whole folder of those PDFs, pulls out the
+numbers that matter (revenue, cost, staff, Social Security funding — per
+service, per institution), double-checks the numbers add up correctly, and
+turns them into the KPIs CNIS uses in funding negotiations. The final
+output is three CSV files the Streamlit dashboard (app.py) reads directly.
+
+WHAT THIS FILE DOES (technical)
+--------------------------------
+Script version of the team's exploratory notebook
+(Notebooks/Multi_Institution_Pipeline_v2.ipynb), organized as: PDF
+text/table extraction (with an OCR fallback for scanned filings) ->
+per-page classification and regex parsing -> per-institution
+cross-validation against that institution's own aggregate page -> KPI
+computation -> anonymization -> CSV export. Run standalone:
+
+    python pipeline.py data/PDF_files data/outputs
+
+Only the elderly-care and childcare social responses relevant to CNIS's
+current analysis are kept (see ALLOWED_ACTIVITIES) — everything else
+(canteens, volunteering programmes, etc.) is dropped after validation.
+"""
+
+import hashlib
 import re
 import warnings
 from pathlib import Path
@@ -21,7 +51,7 @@ pd.set_option("display.float_format", lambda v: f"{v:,.2f}")
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 160)
 
-PDF_FOLDER = Path("PDF_files")  # <-- folder containing all institution PDFs (any mix of years)
+PDF_FOLDER = Path("PDF_files")  # default only; run() below takes a real folder as an argument
 
 TABLE_SETTINGS = {
     "vertical_strategy": "lines",
@@ -35,6 +65,13 @@ TABLE_SETTINGS = {
 OCR_RESOLUTION = 300   # dpi - higher = more accurate but slower
 OCR_LANG = "por"       # Portuguese Tesseract language pack
 
+
+# ---------------------------------------------------------------------------
+# 1. Portuguese number parsing
+# ---------------------------------------------------------------------------
+# OCIP reports use European number formatting: "." as the thousands
+# separator and "," as the decimal separator (e.g. "276.569,56" = 276569.56).
+# Every euro figure extracted from a PDF passes through this function first.
 
 def normalize_pt_number(value_str):
     """Convert '1.234,56' / '-24,07' -> float. Returns np.nan if unparsable."""
@@ -52,6 +89,13 @@ def normalize_pt_number(value_str):
     return -number if negative else number
 
 
+# ---------------------------------------------------------------------------
+# 2. Institution-level metadata (page 1 of every PDF)
+# ---------------------------------------------------------------------------
+# Each PDF's cover page carries the institution's identity (name, NISS,
+# concelho/region). Regexed once per file so every beneficiary row
+# downstream can be tagged with which institution it belongs to.
+
 INSTITUTION_PATTERNS = {
     "ano": r"Ano:\s*(\d{4})",
     "nome_instituicao": r"Nome:\s*(.+)",              # first "Nome:" hit = institution
@@ -67,6 +111,15 @@ def extract_institution_metadata(first_page_text):
         meta[key] = match.group(1).strip() if match else None
     return meta
 
+
+# ---------------------------------------------------------------------------
+# 3. Beneficiary header metadata + page classification
+# ---------------------------------------------------------------------------
+# Each "Mapa A" income-statement page carries free-text header fields
+# (which social response, average users/staff, months active) above the
+# actual table. classify_page() figures out what kind of page we're
+# looking at, since institutions differ in how many beneficiary pages they
+# have and whether a comparticipações page is present at all.
 
 HEADER_PATTERNS = {
     "equipamento": r"Equipamento:\s*(.+)",
@@ -98,6 +151,27 @@ def classify_page(text):
         return "beneficiary"
     return "other"
 
+
+# ---------------------------------------------------------------------------
+# 3b. OCR fallback for scanned pages
+# ---------------------------------------------------------------------------
+# Some institutions submit PDFs that are just a flattened scan/photo of the
+# printed form — no text layer at all (page.extract_text() returns nothing).
+# These two functions are drop-in replacements for page.extract_text() and
+# page.extract_tables(): they use the real text layer when it exists, and
+# transparently fall back to Tesseract OCR when it doesn't. For tables, cell
+# *boundaries* still come from the page's real vector gridlines (via
+# find_tables) — only the text inside each cell is filled in with OCR, so
+# numbers stay aligned to the correct row/column instead of OCR'ing the
+# whole page as one unstructured blob.
+#
+# Requires, on the machine running this (not just installed in Python):
+#   apt-get install tesseract-ocr tesseract-ocr-por
+#   pip install pytesseract
+#
+# OCR output is noisier than a native text layer, so every record
+# downstream carries an is_ocr flag — worth a quick manual spot-check on
+# those rows rather than trusting them blindly.
 
 def get_page_text(page):
     """Return (text, is_ocr) for a page: the native text layer if present,
@@ -148,6 +222,16 @@ def get_page_tables(page, table_settings):
     return ocr_tables, True
 
 
+# ---------------------------------------------------------------------------
+# 4. Mapa A income-statement table parsing
+# ---------------------------------------------------------------------------
+# pdfplumber merges every multi-line block of P&L labels into a single
+# cell, and does the same for the 2025/2024 value columns. Since labels and
+# values come out in the same top-to-bottom order, we reconstruct the
+# mapping by concatenating all label-lines and all value-lines (across
+# every row of the table) and zipping them together. This works whether or
+# not the "NOTAS" column is populated — we never read it.
+
 def extract_income_statement(table):
     """Return {label: (value_year1, value_year2)} for one Mapa A table.
 
@@ -179,6 +263,21 @@ def extract_income_statement(table):
     }
 
 
+# ---------------------------------------------------------------------------
+# 4b. Column-year sanity check (kept for future use, not currently wired in)
+# ---------------------------------------------------------------------------
+# extract_income_statement assumes the table's first value column is always
+# *this filing's own year* and the second is the prior year — true across
+# every sample seen so far, and it's exactly what lets a 2024 filing's
+# "first column" correctly mean 2024 without any extra code (each record is
+# already tagged with its own filing year from page 1's "Ano:" field).
+#
+# This helper is a best-effort cross-check: if the table's literal
+# 2025/2024-style header text is readable, it's compared against the year
+# on page 1. See the commented-out call inside process_pdf() below — left
+# in place (disabled) as a debugging aid if a future batch of filings ever
+# needs the column order double-checked.
+
 def detect_column_years(table):
     """Best-effort read of the literal year labels (e.g. '2025', '2024')
     from a Mapa A table's header row. Returns (year_col0, year_col1) as
@@ -195,6 +294,16 @@ def detect_column_years(table):
         return y0, y1
     return None, None
 
+
+# ---------------------------------------------------------------------------
+# 5. Whitelisted P&L line items
+# ---------------------------------------------------------------------------
+# Only the ~10 top-level line items needed for the KPIs are pulled out of
+# each income statement — several labels (e.g. "ISS, IP") repeat at
+# different nesting depths on the same page, so pulling everything would
+# collide. Left-hand keys are the short internal column names used
+# everywhere downstream; right-hand values are the exact Portuguese labels
+# as printed on the PDF.
 
 LINE_ITEMS = {
     "vendas": "Vendas",
@@ -214,6 +323,28 @@ LINE_ITEMS = {
     "resultado_liquido": "Resultado líquido do período",
 }
 
+
+# ---------------------------------------------------------------------------
+# 6. Authoritative ISS,IP funding (cross-institution finding)
+# ---------------------------------------------------------------------------
+# Testing against real institutions showed ISS,IP funding is NOT always
+# booked on the same P&L line:
+#   - Some institutions book it under "Subsídios de entidades públicas"
+#   - Others book it under "Serviços prestados - Entidades Públicas -> ISS, IP"
+# Relying on a single fixed Mapa A line would silently under- or
+# over-count it. The report has a dedicated "Mapa Comparticipações ISS, IP"
+# page whose "Total da Comparticipação" column is authoritative regardless
+# of booking choice — so that page is parsed separately and joined on.
+#
+# Two wrinkles:
+#   - pdfplumber's line-based extract_tables() doesn't reliably detect row
+#     borders on this specific page (only the header row comes back), so
+#     the page's plain text is regex-parsed instead (COMPARTICIPACOES_ROW_RE).
+#   - That text truncates long beneficiary names (fixed-width column), e.g.
+#     "SERVIÇO DE APOIO DOMICILIÁ" instead of "...DOMICILIÁRIO" — so joining
+#     it back to the Mapa A beneficiary name needs prefix matching, not an
+#     exact match. This is the one genuinely fuzzy-matching step in the
+#     whole pipeline (see match_comparticipacao below).
 
 NUM_PT = r"-?[\d.]+,\d{2}"
 COMPARTICIPACOES_ROW_RE = re.compile(
@@ -262,6 +393,18 @@ def match_comparticipacao(resposta_social_name, comparticipacoes_by_name):
     return np.nan, None
 
 
+# ---------------------------------------------------------------------------
+# 7. Activity filter — keep only elderly-care and childcare responses
+# ---------------------------------------------------------------------------
+# Each institution can report many "Resposta Social/Atividade" lines
+# (canteens, volunteering programmes, etc.) that aren't relevant to this
+# analysis. CNIS's current focus is:
+#   - Elderly care: ERPI (residential), SAD (home support), Centro de Dia
+#   - Childcare / nursery: Creche, Pré-Escolar
+# Matching is done on the stripped name (via strip_code_prefix, e.g.
+# "2101 - CENTRO DE DIA" -> "CENTRO DE DIA") with loose substring matching,
+# since some institutions phrase these slightly differently.
+
 ALLOWED_ACTIVITIES = [
     "ESTRUTURA RESIDENCIAL PARA PESSOAS IDOSAS",
     "SERVIÇO DE APOIO DOMICILIÁRIO",
@@ -294,6 +437,15 @@ def matched_allowed_activity(resposta_social_name):
 def is_allowed_activity(resposta_social_name):
     return matched_allowed_activity(resposta_social_name) is not None
 
+
+# ---------------------------------------------------------------------------
+# 8. Per-PDF extraction
+# ---------------------------------------------------------------------------
+# Ties everything above together for a single institution's PDF: reads
+# page 1 for institution metadata, classifies every other page, parses
+# beneficiary and aggregate Mapa A tables, captures the comparticipações
+# page, then joins the authoritative ISS,IP funding onto each beneficiary
+# record.
 
 def process_pdf(pdf_path):
     """Return (beneficiary_records, aggregate_record, institution_meta)
@@ -330,6 +482,8 @@ def process_pdf(pdf_path):
 
             # Sanity-check the assumed "col 0 = this filing's own year" order
             # now that 2024 (and other-year) filings are mixed in with 2025 ones.
+            # Disabled by default (see section 4b above) — uncomment to debug
+            # a suspected column-order issue on a new batch of filings.
             #year_col0, year_col1 = detect_column_years(tables[0])
             #if year_col0 and year_col0 != institution_meta.get("ano"):
                 #warnings.warn(
@@ -368,6 +522,15 @@ def process_pdf(pdf_path):
     return beneficiary_records, aggregate_record, institution_meta
 
 
+# ---------------------------------------------------------------------------
+# 9. Cross-institution validation
+# ---------------------------------------------------------------------------
+# Sums the whitelisted line items across an institution's beneficiary pages
+# and compares them to that institution's own aggregate Mapa A page — a
+# free correctness check with no external ground truth needed. Every
+# institution processed so far has passed this check (see the console
+# output when running the pipeline).
+
 def validate_institution(beneficiary_records, aggregate_record, institution_name):
     if aggregate_record is None:
         print(f"  [{institution_name}] No aggregate page found - skipping validation.")
@@ -390,6 +553,17 @@ def validate_institution(beneficiary_records, aggregate_record, institution_name
     return True
 
 
+# ---------------------------------------------------------------------------
+# 10. KPI computation
+# ---------------------------------------------------------------------------
+# The KPIs CNIS uses in negotiations, vectorised across every
+# institution/beneficiary row at once. Social-security funding uses
+# ss_funding_authoritative (falling back to subsidios_publicos only if no
+# comparticipações match was found), per the finding in section 6 above.
+# All "monthly_..." figures are already normalized by n_meses (months the
+# filing covers), so institutions filing for different periods are still
+# comparable.
+
 def compute_kpis(df):
     df = df.copy()
 
@@ -404,11 +578,11 @@ def compute_kpis(df):
     )
     df["labour_cost"] = -df["gastos_pessoal"].fillna(0)
 
-    df["monthly_revenue"] = df["revenue"] / df["n_meses"] 
+    df["monthly_revenue"] = df["revenue"] / df["n_meses"]
     df["monthly_fee"] = df["servicos_prestados"] / df["n_meses"]
     df["monthly_social_security_funding"] = df["ss_funding"] / df["n_meses"]
     df["monthly_cost"] = df["total_cost"] / df["n_meses"]
-    df["monthly_ebitda"] = df["ebitda"] / df["n_meses"] 
+    df["monthly_ebitda"] = df["ebitda"] / df["n_meses"]
     df["monthly_labour_cost"] = df["labour_cost"] / df["n_meses"]
 
     df["monthly_revenue_per_beneficiary"] = df["monthly_revenue"] / df["n_medio_utentes"]
@@ -428,6 +602,13 @@ def compute_kpis(df):
     return df
 
 
+# Column subset (+ order) written to kpi_table.csv — the "clean" export
+# meant for people rather than for the dashboard's own internal use.
+# Note: this uses monthly_social_security_funding_per_beneficiary as
+# computed above (the Mapa A ISS,IP lines). app.py additionally computes an
+# "authoritative" funding basis (see its load_data()) and lets the user
+# toggle between the two live in the dashboard — that toggle happens in the
+# app, not here, so this exported CSV always reflects the Mapa A version.
 KPI_COLS = [
     "institution_id", "ano", "resposta_social", "activity_group",
     "n_medio_utentes", "n_medio_funcionarios",
@@ -435,9 +616,13 @@ KPI_COLS = [
     "monthly_social_security_funding_per_beneficiary", "monthly_cost_per_beneficiary","monthly_ebitda_per_beneficiary",
     "monthly_revenue_per_worker", "monthly_cost_per_worker", "monthly_labour_cost_per_worker",
     "beneficiary_worker_ratio", "ss_funding_cost_coverage_ratio",
-    
+
 ]
 
+
+# ---------------------------------------------------------------------------
+# 11. Batch driver: run over every PDF in the folder
+# ---------------------------------------------------------------------------
 
 def run_batch(pdf_folder):
     pdf_paths = sorted(Path(pdf_folder).glob("*.pdf"))
@@ -486,7 +671,21 @@ def run_batch(pdf_folder):
 
     kpi_df = compute_kpis(combined)
     return combined, kpi_df, validation_results
-import hashlib
+
+
+# ---------------------------------------------------------------------------
+# 12. Anonymization
+# ---------------------------------------------------------------------------
+# Real institution names/NISS never leave this step — every downstream
+# CSV (and everything the Streamlit app or the AI assistant sees) only
+# has the hashed institution_id. This is a *pseudonymization*, not
+# irreversible anonymization: the same NISS always hashes to the same ID,
+# which is what lets the "Institution Explorer" tab consistently group an
+# institution's rows together across tabs and reruns — but the hash is not
+# salted, so anyone with a NISS list could re-identify institutions by
+# recomputing the hash. That's an accepted tradeoff for this internal CNIS
+# tool; do not treat institution_id as a strong anonymity guarantee if this
+# data is ever shared outside the team.
 
 def anonymize_institutions(df, niss_col="niss", name_col="nome_instituicao"):
     """Replace NISS + institution name with a stable pseudonymous ID.
@@ -513,7 +712,8 @@ def run(pdf_folder, out_dir=None):
     """Run the full pipeline over `pdf_folder`.
 
     Returns (raw_df, kpi_df, kpi_table, validation_results), anonymized.
-    If `out_dir` is given, saves raw_df.csv and kpi_table.csv there.
+    If `out_dir` is given, saves raw_df.csv, kpi_df.csv and kpi_table.csv
+    there — these three files are exactly what app.py reads on startup.
     """
     raw_df, kpi_df, validation_results = run_batch(pdf_folder)
     raw_df = anonymize_institutions(raw_df)
@@ -532,6 +732,10 @@ def run(pdf_folder, out_dir=None):
 
 
 if __name__ == "__main__":
+    # CLI entry point: `python pipeline.py [pdf_folder] [out_dir]`.
+    # Both arguments are optional and default to the paths the Streamlit
+    # app expects, so running it with no arguments from the project root
+    # "just works" for the common case of reprocessing data/PDF_files.
     import sys
     pdf_folder = sys.argv[1] if len(sys.argv) > 1 else "data/PDF_files"
     out_dir = sys.argv[2] if len(sys.argv) > 2 else "data/outputs"

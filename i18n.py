@@ -1,8 +1,24 @@
 """UI text for the IPSS Financial Observatory, English and European Portuguese.
 
-Usage: `t = TRANSLATIONS[lang]` then `t["some_key"]`. Keep keys identical
-across languages — a missing key will KeyError loudly rather than silently
-falling back, which is what we want while the app is still small.
+WHAT THIS FILE DOES (plain language)
+-------------------------------------
+Every piece of text the app shows on screen — button labels, tab names,
+chart titles, the chatbot's suggested questions — lives here twice: once
+in English, once in Portuguese. When someone flips the language switch in
+the sidebar, app.py and data_agent.py just read from a different half of
+this dictionary; none of the display logic itself changes.
+
+WHAT THIS FILE DOES (technical)
+--------------------------------
+`TRANSLATIONS` is a dict keyed by language code ("en" / "pt"), each value
+itself a dict of string keys -> label. Callers do `t = TRANSLATIONS[lang]`
+then `t["some_key"]`; keys containing `{placeholder}` (e.g. "{target}") are
+filled in with `.format(...)` at the call site. Keep keys identical across
+both languages — a missing key raises KeyError immediately rather than
+silently falling back to English, which is what we want while the app is
+still small enough to catch that in testing rather than in front of users.
+To add a third language, add another top-level key (e.g. "es") with every
+key from "en" translated; nothing else in the codebase needs to change.
 """
 
 TRANSLATIONS = {

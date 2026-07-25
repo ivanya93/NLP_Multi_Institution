@@ -1,11 +1,21 @@
 """IPSS Financial Observatory — OCIP KPI dashboard + AI assistant.
 
-Streamlit app over the multi-institution OCIP pipeline outputs
-(data/outputs/kpi_df.csv, raw_df.csv). Organized by social response and
-region, with a Claude-powered chatbot for KPI questions and negotiation
-talking points. UI available in English and European Portuguese (sidebar
-toggle) since the team is bilingual and the data/negotiation counterpart
-(Ministry of Labour, Solidarity and Social Security) is Portuguese-speaking.
+WHAT THIS FILE DOES (plain language)
+-------------------------------------
+This is the main screen of the app. It loads the KPI numbers that
+`pipeline.py` already extracted from the institutions' OCIP financial
+filings, lets the user filter them (by year, institution, region, etc.),
+and displays them as cards, charts and tables across six tabs. One of
+those tabs embeds an AI chat assistant (built in `data_agent.py`) that can
+answer questions about the filtered data in plain English or Portuguese.
+
+WHAT THIS FILE DOES (technical)
+--------------------------------
+Streamlit script (re-run top-to-bottom on every user interaction) over the
+multi-institution OCIP pipeline outputs (data/outputs/kpi_df.csv,
+raw_df.csv). UI text is fully bilingual (EN/PT) via `i18n.py`, since the
+team is bilingual and the negotiation counterpart (Ministry of Labour,
+Solidarity and Social Security) is Portuguese-speaking.
 """
 
 from pathlib import Path
@@ -22,25 +32,25 @@ st.set_page_config(
     layout="wide",
 )
 
-# Corporate palette
-NAVY = "#1F3A5F"
-STEEL = "#4A6FA5"
-GREY = "#6C757D"
-GREEN = "#2E7D5B"
-RED = "#B0413E"
-
+# ------------------------------------------------------------- theming (CSS)
+# Only style things Streamlit's own theme system doesn't already handle
+# (metric-card borders), and do it with Streamlit's CSS *variables* instead
+# of hardcoded hex colors. These variables automatically switch value when
+# the user picks Light / Dark / System from the app menu (top-right "⋮").
+# Earlier versions of this file hardcoded a light sidebar background and a
+# dark navy heading color — those look fine in Light mode but turn into
+# barely-visible dark-on-dark text in Dark mode. Using var(--...) instead
+# lets Streamlit pick colors with the right contrast for whichever theme is
+# active, so nothing needs to be duplicated per theme.
 st.markdown(
-    f"""
+    """
     <style>
-    h1, h2, h3 {{ color: {NAVY}; }}
-    [data-testid="stMetricValue"] {{ color: {NAVY}; }}
-    [data-testid="stSidebar"] {{ background-color: #F4F6F9; }}
-    div[data-testid="stMetric"] {{
-        background-color: #FFFFFF;
-        border: 1px solid #DDE3EC;
+    div[data-testid="stMetric"] {
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.25);
         border-radius: 8px;
         padding: 12px 16px;
-    }}
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -50,23 +60,39 @@ st.markdown(
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "data" / "outputs"
 
-TARGET_COVERAGE = 0.50  # negotiation goal: SS funding >= 50% of cost/beneficiary
+# Negotiation benchmark from the project brief: CNIS wants Social Security
+# funding to cover at least 50% of the cost per beneficiary, per social
+# response. This single constant drives the "target" callouts across the
+# whole dashboard (metrics, chart captions, chatbot system prompt).
+TARGET_COVERAGE = 0.50
 TARGET_STR = f"{TARGET_COVERAGE:.0%}"
 
 
-@st.cache_data
+@st.cache_data  # cached so the CSVs are only re-read when the files change,
+                # not on every filter click / tab switch
 def load_data():
+    """Load the two CSVs pipeline.py produces and add a couple of derived
+    columns the dashboard needs but the pipeline doesn't compute directly."""
     kpi = pd.read_csv(OUT / "kpi_df.csv")
     raw = pd.read_csv(OUT / "raw_df.csv")
-    # Two ways of measuring SS funding per beneficiary:
-    # 1) Mapa A "ISS, IP" P&L lines (the notebook KPI) - missing when the
-    #    institution books the funding under a different line (~half the rows).
-    # 2) Authoritative ss_funding (Mapa Comparticipações page, falling back to
-    #    "Subsídios de entidades públicas"), per notebook section 7.
+
+    # There are two different ways to measure "Social Security funding per
+    # beneficiary" in the source data, and they disagree for about half the
+    # rows (see pipeline.py section 7 for why). We compute both here and let
+    # the user pick which one drives the dashboard via the sidebar radio:
+    #   1) "Mapa A" — the ISS,IP line items on the standard income-statement
+    #      page. Simple, but blank whenever an institution books that
+    #      funding under a different accounting line.
+    #   2) "Authoritative" — the dedicated Comparticipações ISS,IP page
+    #      (falling back to the public-subsidies line only if no match was
+    #      found there). More complete, which is why it's the default.
     kpi["ss_funding_benef_mapa_a"] = kpi["monthly_social_security_funding_per_beneficiary"]
     kpi["ss_funding_benef_auth"] = (
         kpi["monthly_social_security_funding"] / kpi["n_medio_utentes"]
     )
+
+    # "1103 - CRECHE" -> "Crèche": strip the internal numeric code prefix
+    # and title-case it, purely for a nicer display label in charts/tables.
     kpi["resposta_social_clean"] = (
         kpi["resposta_social"].str.replace(r"^\d+\s*-\s*", "", regex=True).str.title()
     )
@@ -74,6 +100,8 @@ def load_data():
 
 
 # --------------------------------------------------------------- language toggle
+# Kept in session_state so it survives Streamlit's rerun-on-every-click model
+# instead of resetting to English each time a filter changes.
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
@@ -86,16 +114,22 @@ with st.sidebar:
     st.session_state.lang = "en" if lang_choice == "English" else "pt"
 
 lang = st.session_state.lang
-t = TRANSLATIONS[lang]
-KPI_LABELS = t["kpi_labels"]
+t = TRANSLATIONS[lang]          # shorthand: t["some_key"] -> label in the active language
+KPI_LABELS = t["kpi_labels"]    # KPI column name -> human-readable label, in that language
 
 try:
     kpi_df, raw_df = load_data()
 except FileNotFoundError:
+    # Happens if someone runs the app before ever running pipeline.py, or
+    # points OUT at the wrong folder. Fail loudly with a helpful message
+    # rather than crashing on a cryptic pandas error further down.
     st.error(t["missing_outputs_error"])
     st.stop()
 
 # -------------------------------------------------------------------- sidebar
+# Everything that narrows down "which rows count" lives in the sidebar:
+# the funding-basis choice, then the five filter dropdowns. `df` (built at
+# the end of this block) is the single filtered dataset every tab reads from.
 with st.sidebar:
     st.title(t["app_name"])
     st.caption(t["app_subtitle"])
@@ -107,12 +141,20 @@ with st.sidebar:
         t["funding_basis_options"],
         help=t["funding_basis_help"],
     )
+    # Swap in whichever of the two funding columns (see load_data() above)
+    # the user picked, then recompute the derived "coverage" ratio from it.
+    # Recomputing here (rather than precomputing both in load_data) keeps
+    # exactly one "funding_coverage" column downstream, so every chart/tab
+    # below doesn't need to know which basis is active.
     _fund_col = ("ss_funding_benef_auth" if basis == t["funding_basis_options"][0]
                  else "ss_funding_benef_mapa_a")
     kpi_df = kpi_df.copy()
     kpi_df["monthly_social_security_funding_per_beneficiary"] = kpi_df[_fund_col]
     kpi_df["funding_coverage"] = kpi_df[_fund_col] / kpi_df["monthly_cost_per_beneficiary"]
 
+    # Build each filter's option list from the data itself (not hardcoded),
+    # so new years/institutions/regions show up automatically after
+    # re-running pipeline.py with fresh PDFs.
     years = sorted(kpi_df["ano"].dropna().unique())
     institutions = sorted(kpi_df["institution_id"].dropna().unique())
     groups = sorted(kpi_df["activity_group"].dropna().unique())
@@ -125,6 +167,9 @@ with st.sidebar:
     f_resp = st.multiselect(t["social_response_label"], responses, default=responses)
     f_conc = st.multiselect(t["region_label"], concelhos, default=concelhos)
 
+    # All five filters apply together (AND, not OR) — e.g. picking one
+    # institution AND one year shows only that institution's records for
+    # that year. Every tab from here on reads `df`, never `kpi_df` directly.
     df = kpi_df[
         kpi_df["ano"].isin(f_years)
         & kpi_df["institution_id"].isin(f_inst)
@@ -141,6 +186,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader(t["downloads_header"])
+    # Both downloads respect the current filters/basis, so the team can
+    # export exactly the slice of data they're looking at (e.g. for a
+    # negotiation briefing deck) without re-running any code.
     st.download_button(
         t["kpi_csv_button"],
         df.to_csv(index=False).encode("utf-8"),
@@ -159,6 +207,9 @@ with st.sidebar:
     st.caption(t["footer_caption"])
 
 if df.empty:
+    # E.g. the user filtered to a year/institution combination that has no
+    # matching rows. Stop here instead of letting every tab below crash on
+    # empty-dataframe edge cases (median of nothing, etc.).
     st.warning(t["no_data_warning"])
     st.stop()
 
@@ -172,6 +223,9 @@ tab_overview, tab_resp, tab_region, tab_inst, tab_chat, tab_data = st.tabs([
 ])
 
 # ------------------------------------------------------------------- overview
+# Headline numbers + two summary charts: are we, on average, near the 50%
+# funding target, and how does cost/funding/fees break down by activity
+# group (elderly care vs. childcare)?
 with tab_overview:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric(t["median_cost_metric"], f"€ {df['monthly_cost_per_beneficiary'].median():,.0f}/mo")
@@ -180,6 +234,7 @@ with tab_overview:
     c3.metric(
         t["median_coverage_metric"],
         f"{med_cov:.0%}",
+        # Green/red delta arrow vs. the 50% target, e.g. "-15% vs 50% target"
         delta=f"{med_cov - TARGET_COVERAGE:+.0%} {t['coverage_delta_suffix'].format(target=TARGET_STR)}",
     )
     share_above = (df["funding_coverage"] >= TARGET_COVERAGE).mean()
@@ -193,7 +248,7 @@ with tab_overview:
         .sort_values()
         .reset_index()
     )
-    cov["funding_coverage_pct"] = cov["funding_coverage"] * 100
+    cov["funding_coverage_pct"] = cov["funding_coverage"] * 100  # 0.35 -> 35, for the chart axis
     st.bar_chart(cov, x="resposta_social_clean", y="funding_coverage_pct",
                  color="#4A6FA5", horizontal=True, height=320)
     st.caption(t["coverage_chart_caption"].format(target=TARGET_STR))
@@ -216,6 +271,8 @@ with tab_overview:
                  stack=False, height=320,
                  color=["#B0413E", "#1F3A5F", "#4A6FA5"])
 
+    # Plain-language flag: how many of the filtered records are actually
+    # losing money per beneficiary each month, given current funding.
     deficit = df[df["monthly_ebitda_per_beneficiary"] < 0]
     st.markdown(
         t["deficit_flag"].format(
@@ -224,13 +281,15 @@ with tab_overview:
     )
 
 # ---------------------------------------------------------- by social response
+# Same idea as Overview, but lets the user pick *any* KPI and see its full
+# spread (not just the median) per social response.
 with tab_resp:
     kpi_choice = st.selectbox(
         t["kpi_selectbox_label"], list(KPI_LABELS), format_func=KPI_LABELS.get, key="kpi_resp"
     )
     plot_df = df.copy()
     if kpi_choice == "funding_coverage":
-        plot_df[kpi_choice] = plot_df[kpi_choice] * 100
+        plot_df[kpi_choice] = plot_df[kpi_choice] * 100  # display as a percentage, not a 0-1 fraction
 
     st.markdown(f"### {t['distribution_title'].format(kpi=KPI_LABELS[kpi_choice])}")
     st.scatter_chart(
@@ -248,6 +307,8 @@ with tab_resp:
     st.dataframe(summary, width="stretch")
 
 # -------------------------------------------------------------------- by region
+# Same KPI-picker pattern as the tab above, but sliced by concelho (region)
+# instead of social response — useful for spotting regional cost/funding gaps.
 with tab_region:
     kpi_choice_r = st.selectbox(
         t["kpi_selectbox_label"], list(KPI_LABELS), format_func=KPI_LABELS.get, key="kpi_region"
@@ -262,7 +323,7 @@ with tab_region:
         .median().sort_values().reset_index()
     )
     st.bar_chart(reg, x="concelho", y=kpi_choice_r, horizontal=True,
-                 color="#1F3A5F", height=max(300, 24 * len(reg)))
+                 color="#1F3A5F", height=max(300, 24 * len(reg)))  # taller chart if there are many regions
 
     st.markdown(f"### {t['region_x_response_title']}")
     pivot = reg_df.pivot_table(
@@ -272,6 +333,9 @@ with tab_region:
     st.dataframe(pivot, width="stretch")
 
 # ---------------------------------------------------------- institution explorer
+# Drill down into a single (anonymized) institution: its identifying
+# metadata and a per-social-response breakdown of every KPI, exportable on
+# its own for use outside the app (e.g. a one-page institution brief).
 with tab_inst:
     inst = st.selectbox(t["institution_label"], sorted(df["institution_id"].unique()))
     inst_df = df[df["institution_id"] == inst]
@@ -281,6 +345,8 @@ with tab_inst:
     meta_cols[2].metric(t["responses_metric"], len(inst_df))
     meta_cols[3].metric(t["avg_benef_metric"], f"{inst_df['n_medio_utentes'].sum():,.0f}")
 
+    # Map internal column names -> display labels for just the columns we
+    # want to show here (a curated subset, not every KPI in the dataset).
     show_cols = {
         "resposta_social_clean": t["col_social_response"],
         "n_medio_utentes": t["col_avg_users"],
@@ -303,12 +369,19 @@ with tab_inst:
     )
 
 # ----------------------------------------------------------------- AI assistant
+# Delegated to data_agent.py to keep this file focused on the dashboard
+# layout. The import is done here (not at the top of the file) so the
+# assistant's dependencies (the `anthropic` package) are only touched when
+# this tab is actually rendered.
 with tab_chat:
     from data_agent import render_chat  # separate module keeps app.py readable
 
     render_chat(df, raw_df, KPI_LABELS, TARGET_COVERAGE, lang)
 
 # ------------------------------------------------------------------------ data
+# Escape hatch: the full filtered KPI table and the complete (unfiltered)
+# raw extraction, for anyone who wants to eyeball the underlying numbers
+# rather than a chart.
 with tab_data:
     st.markdown(f"### {t['kpi_table_title']}")
     st.dataframe(df.round(2), width="stretch", height=420)
