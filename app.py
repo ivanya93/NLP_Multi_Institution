@@ -20,10 +20,24 @@ Solidarity and Social Security) is Portuguese-speaking.
 
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from i18n import TRANSLATIONS
+
+# Portuguese place names keep these small connector words lowercase (unless
+# they're the first word), e.g. "PÓVOA DE VARZIM" -> "Póvoa de Varzim".
+_PT_LOWERCASE_PARTICLES = {"de", "da", "do", "das", "dos", "e", "a", "o", "à", "às"}
+
+
+def titlecase_pt(text):
+    words = str(text).split(" ")
+    return " ".join(
+        w.lower() if i > 0 and w.lower() in _PT_LOWERCASE_PARTICLES
+        else w[:1].upper() + w[1:].lower()
+        for i, w in enumerate(words)
+    )
 
 # ---------------------------------------------------------------- page config
 st.set_page_config(
@@ -96,6 +110,11 @@ def load_data():
     kpi["resposta_social_clean"] = (
         kpi["resposta_social"].str.replace(r"^\d+\s*-\s*", "", regex=True).str.title()
     )
+
+    # "PÓVOA DE VARZIM" -> "Póvoa de Varzim": the source PDFs write concelho
+    # names in all caps; title-case them for display (see titlecase_pt above
+    # for why plain .str.title() isn't enough here).
+    kpi["concelho"] = kpi["concelho"].apply(titlecase_pt)
     return kpi, raw
 
 
@@ -151,6 +170,15 @@ with st.sidebar:
     kpi_df = kpi_df.copy()
     kpi_df["monthly_social_security_funding_per_beneficiary"] = kpi_df[_fund_col]
     kpi_df["funding_coverage"] = kpi_df[_fund_col] / kpi_df["monthly_cost_per_beneficiary"]
+
+    # pipeline.py always writes the Portuguese social-response names; swap in
+    # the EN translations here so every filter, chart and table downstream
+    # picks them up automatically (PT values are left unchanged).
+    kpi_df["resposta_social_clean"] = (
+        kpi_df["resposta_social_clean"]
+        .map(t["resposta_social_values"])
+        .fillna(kpi_df["resposta_social_clean"])
+    )
 
     # Build each filter's option list from the data itself (not hardcoded),
     # so new years/institutions/regions show up automatically after
@@ -247,10 +275,27 @@ with tab_overview:
         .median()
         .sort_values()
         .reset_index()
+        .rename(columns={"resposta_social_clean": t["col_social_response"]})
     )
-    cov["funding_coverage_pct"] = cov["funding_coverage"] * 100  # 0.35 -> 35, for the chart axis
-    st.bar_chart(cov, x="resposta_social_clean", y="funding_coverage_pct",
-                 color="#4A6FA5", horizontal=True, height=320)
+    cov[t["col_funding_coverage_pct"]] = cov["funding_coverage"] * 100  # 0.35 -> 35, for the chart axis
+    # A wrapped copy just for the axis labels: long social-response names
+    # get a manual line break (see resposta_social_line_breaks); short ones
+    # pass through unchanged.
+    cov["_label"] = cov[t["col_social_response"]].map(
+        lambda v: t["resposta_social_line_breaks"].get(v, v)
+    )
+    coverage_chart = (
+        alt.Chart(cov)
+        .mark_bar(color="#4A6FA5")
+        .encode(
+            y=alt.Y("_label:N", title=t["col_social_response"],
+                    sort=cov["_label"].tolist(),
+                    axis=alt.Axis(labelLimit=1000, labelExpr="split(datum.label, '\\n')")),
+            x=alt.X(f"{t['col_funding_coverage_pct']}:Q", title=t["col_funding_coverage_pct"]),
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(coverage_chart, width="stretch")
     st.caption(t["coverage_chart_caption"].format(target=TARGET_STR))
 
     st.markdown(f"### {t['cost_vs_funding_chart_title']}")
@@ -266,10 +311,34 @@ with tab_overview:
             "monthly_fee_per_beneficiary": t["series_fees"],
         })
     )
-    st.bar_chart(grp, x="activity_group",
-                 y=[t["series_cost"], t["series_funding"], t["series_fees"]],
-                 stack=False, height=320,
-                 color=["#B0413E", "#1F3A5F", "#4A6FA5"])
+    # pipeline.py only ever writes the Portuguese "Idosos"/"Infância" labels
+    # (it isn't bilingual), so translate them for the EN UI here.
+    grp["activity_group"] = grp["activity_group"].map(t["activity_group_values"])
+    grp_long = grp.melt(
+        id_vars="activity_group", var_name="series", value_name="value",
+        value_vars=[t["series_cost"], t["series_funding"], t["series_fees"]],
+    )
+    # Built with Altair directly (instead of st.bar_chart) so the x-axis
+    # category labels render horizontally (labelAngle=0) rather than
+    # Vega-Lite's auto-rotated default for this grouped-bar layout.
+    cost_chart = (
+        alt.Chart(grp_long)
+        .mark_bar()
+        .encode(
+            x=alt.X("activity_group:N", title=t["activity_group_label"], axis=alt.Axis(labelAngle=0)),
+            xOffset="series:N",
+            y=alt.Y("value:Q", title=None),
+            color=alt.Color(
+                "series:N", title=None,
+                scale=alt.Scale(
+                    domain=[t["series_cost"], t["series_funding"], t["series_fees"]],
+                    range=["#B0413E", "#1F3A5F", "#4A6FA5"],
+                ),
+            ),
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(cost_chart, width="stretch")
 
     # Plain-language flag: how many of the filtered records are actually
     # losing money per beneficiary each month, given current funding.
@@ -290,19 +359,49 @@ with tab_resp:
     plot_df = df.copy()
     if kpi_choice == "funding_coverage":
         plot_df[kpi_choice] = plot_df[kpi_choice] * 100  # display as a percentage, not a 0-1 fraction
+    plot_df = plot_df.rename(columns={
+        "resposta_social_clean": t["col_social_response"],
+        "activity_group": t["activity_group_label"],
+    })
 
     st.markdown(f"### {t['distribution_title'].format(kpi=KPI_LABELS[kpi_choice])}")
-    st.scatter_chart(
-        plot_df, x="resposta_social_clean", y=kpi_choice,
-        color="activity_group", height=380,
+    # Built with Altair directly (instead of st.scatter_chart) so the x-axis
+    # social-response labels render horizontally (labelAngle=0) rather than
+    # Vega-Lite's auto-rotated default for this many-category axis. A wrapped
+    # copy of the labels (kept out of the tooltip/groupby/Summary stats below)
+    # gets a manual line break for the long names (see
+    # resposta_social_line_breaks); short ones pass through unchanged.
+    plot_df["_label"] = plot_df[t["col_social_response"]].map(
+        lambda v: t["resposta_social_line_breaks"].get(v, v)
     )
+    dist_chart = (
+        alt.Chart(plot_df)
+        .mark_circle(size=60)
+        .encode(
+            x=alt.X("_label:N", title=t["col_social_response"],
+                    axis=alt.Axis(labelAngle=0, labelLimit=1000,
+                                  labelExpr="split(datum.label, '\\n')")),
+            y=alt.Y(f"{kpi_choice}:Q", title=KPI_LABELS[kpi_choice]),
+            color=alt.Color(t["activity_group_label"], type="nominal"),
+            tooltip=[t["col_social_response"], kpi_choice, t["activity_group_label"]],
+        )
+        .properties(height=380)
+    )
+    st.altair_chart(dist_chart, width="stretch")
 
     st.markdown(f"### {t['summary_stats_title']}")
     summary = (
-        plot_df.groupby("resposta_social_clean")[kpi_choice]
+        plot_df.groupby(t["col_social_response"])[kpi_choice]
         .agg(records="count", median="median", mean="mean", min="min", max="max")
         .round(1)
         .sort_values("median", ascending=False)
+        .rename(columns={
+            "records": t["summary_col_records"],
+            "median": t["summary_col_median"],
+            "mean": t["summary_col_mean"],
+            "min": t["summary_col_min"],
+            "max": t["summary_col_max"],
+        })
     )
     st.dataframe(summary, width="stretch")
 
@@ -321,13 +420,28 @@ with tab_region:
     reg = (
         reg_df.groupby("concelho")[kpi_choice_r]
         .median().sort_values().reset_index()
+        .rename(columns={"concelho": t["concelho_metric"]})
     )
-    st.bar_chart(reg, x="concelho", y=kpi_choice_r, horizontal=True,
-                 color="#1F3A5F", height=max(300, 24 * len(reg)))  # taller chart if there are many regions
+    # Built with Altair (instead of st.bar_chart) so the value axis can show
+    # the translated KPI label instead of the raw column name, same as the
+    # "By response" tab's distribution chart.
+    region_chart = (
+        alt.Chart(reg)
+        .mark_bar(color="#1F3A5F")
+        .encode(
+            y=alt.Y(f"{t['concelho_metric']}:N", sort=reg[t["concelho_metric"]].tolist()),
+            x=alt.X(f"{kpi_choice_r}:Q", title=KPI_LABELS[kpi_choice_r]),
+        )
+        .properties(height=max(300, 24 * len(reg)))  # taller chart if there are many regions
+    )
+    st.altair_chart(region_chart, width="stretch")
 
     st.markdown(f"### {t['region_x_response_title']}")
-    pivot = reg_df.pivot_table(
-        index="concelho", columns="resposta_social_clean",
+    pivot = reg_df.rename(columns={
+        "resposta_social_clean": t["col_social_response"],
+        "concelho": t["concelho_metric"],
+    }).pivot_table(
+        index=t["concelho_metric"], columns=t["col_social_response"],
         values=kpi_choice_r, aggfunc="median",
     ).round(1)
     st.dataframe(pivot, width="stretch")

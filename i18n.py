@@ -41,7 +41,23 @@ TRANSLATIONS = {
         ),
         "year_label": "Year",
         "institution_filter_label": "Institution",
-        "activity_group_label": "Activity group",
+        "activity_group_label": "Activity Group",
+        "activity_group_values": {"Idosos": "Seniors", "Infância": "Childhood"},
+        "resposta_social_values": {
+            "Centro De Dia": "Day Centre",
+            "Creche": "Nursery",
+            "Estabelecimento De Educação Pré-Escolar": "Pre-school Education Centre",
+            "Estrutura Residencial Para Pessoas Idosas": "Residential Care Home for the Elderly",
+            "Serviço De Apoio Domiciliário": "Home Care Service",
+        },
+        # Manual line breaks for the long social-response names, used only as
+        # chart axis labels (Overview + By response) — everywhere else (the
+        # Summary statistics table, filters, tooltips, ...) keeps the plain
+        # single-line text above.
+        "resposta_social_line_breaks": {
+            "Residential Care Home for the Elderly": "Residential Home Care \nfor the Elderly",
+            "Pre-school Education Centre": "Pre-school \nEducation Centre",
+        },
         "social_response_label": "Social response",
         "region_label": "Region (concelho)",
         "coverage_header": "Coverage",
@@ -93,15 +109,20 @@ TRANSLATIONS = {
         "kpi_selectbox_label": "KPI",
         "distribution_title": "{kpi} — distribution by social response",
         "summary_stats_title": "Summary statistics",
+        "summary_col_records": "Records",
+        "summary_col_median": "Median",
+        "summary_col_mean": "Mean",
+        "summary_col_min": "Minimum",
+        "summary_col_max": "Maximum",
         "median_by_concelho_title": "{kpi} — median by concelho",
         "region_x_response_title": "Region × social response (medians)",
         # institution explorer
         "institution_label": "Institution",
-        "concelho_metric": "Concelho",
+        "concelho_metric": "Municipality",
         "year_metric": "Year",
         "responses_metric": "Social responses",
         "avg_benef_metric": "Avg beneficiaries",
-        "col_social_response": "Social response",
+        "col_social_response": "Social Response",
         "col_avg_users": "Avg users",
         "col_avg_staff": "Avg staff",
         "col_revenue_benef": "Revenue/benef.",
@@ -109,6 +130,7 @@ TRANSLATIONS = {
         "col_funding_benef": "SS funding/benef.",
         "col_ebitda_benef": "EBITDA/benef.",
         "col_coverage": "Coverage",
+        "col_funding_coverage_pct": "% Funding Coverage",
         "col_benef_worker": "Benef./worker",
         "download_institution_button": "Download this institution (CSV)",
         # data tab
@@ -169,7 +191,24 @@ TRANSLATIONS = {
         ),
         "year_label": "Ano",
         "institution_filter_label": "Instituição",
-        "activity_group_label": "Grupo de atividade",
+        "activity_group_label": "Grupo de Atividade",
+        "activity_group_values": {"Idosos": "Idosos", "Infância": "Infância"},
+        "resposta_social_values": {
+            "Centro De Dia": "Centro De Dia",
+            "Creche": "Creche",
+            "Estabelecimento De Educação Pré-Escolar": "Estabelecimento De Educação Pré-Escolar",
+            "Estrutura Residencial Para Pessoas Idosas": "Estrutura Residencial Para Pessoas Idosas",
+            "Serviço De Apoio Domiciliário": "Serviço De Apoio Domiciliário",
+        },
+        # Manual line breaks for the long social-response names, used only as
+        # chart axis labels (Overview + By response) — everywhere else (the
+        # Summary statistics table, filters, tooltips, ...) keeps the plain
+        # single-line text above.
+        "resposta_social_line_breaks": {
+            "Estabelecimento De Educação Pré-Escolar": "Estabelecimento De \nEducação Pré- Escolar",
+            "Estrutura Residencial Para Pessoas Idosas": "Estrutura Residencial \nPara Pessoas Idosas",
+            "Serviço De Apoio Domiciliário": "Serviço De Apoio \nDomiciliário",
+        },
         "social_response_label": "Resposta social",
         "region_label": "Região (concelho)",
         "coverage_header": "Cobertura",
@@ -221,6 +260,11 @@ TRANSLATIONS = {
         "kpi_selectbox_label": "KPI",
         "distribution_title": "{kpi} — distribuição por resposta social",
         "summary_stats_title": "Estatísticas resumo",
+        "summary_col_records": "Registos",
+        "summary_col_median": "Mediana",
+        "summary_col_mean": "Média",
+        "summary_col_min": "Mínimo",
+        "summary_col_max": "Máximo",
         "median_by_concelho_title": "{kpi} — mediana por concelho",
         "region_x_response_title": "Região × resposta social (medianas)",
         # institution explorer
@@ -229,14 +273,15 @@ TRANSLATIONS = {
         "year_metric": "Ano",
         "responses_metric": "Respostas sociais",
         "avg_benef_metric": "Beneficiários médios",
-        "col_social_response": "Resposta social",
-        "col_avg_users": "Utentes médios",
-        "col_avg_staff": "Funcionários médios",
+        "col_social_response": "Resposta Social",
+        "col_avg_users": "Média de Utentes",
+        "col_avg_staff": "Média de Funcionários",
         "col_revenue_benef": "Receita/benef.",
         "col_cost_benef": "Custo/benef.",
         "col_funding_benef": "Financ. SS/benef.",
         "col_ebitda_benef": "EBITDA/benef.",
         "col_coverage": "Cobertura",
+        "col_funding_coverage_pct": "% Cobertura Financiamento",
         "col_benef_worker": "Benef./trabalhador",
         "download_institution_button": "Transferir esta instituição (CSV)",
         # data tab
