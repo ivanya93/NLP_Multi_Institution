@@ -22,3 +22,9 @@ env/
 # Chat session exports (personal working notes, not project deliverables)
 insights/
 ouputs/
+
+# Examples and templates (not part of the project deliverables)
+example LLM app streamlit/
+
+
+
