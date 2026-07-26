@@ -621,6 +621,6 @@ with tab_chat:
 # rather than a chart.
 with tab_data:
     st.markdown(f"### {t['kpi_table_title']}")
-    st.dataframe(df.round(2), width="stretch", height=420)
+    st.dataframe(df.round(2).rename(columns=t["data_columns"]), width="stretch", height=420)
     st.markdown(f"### {t['raw_data_title']}")
-    st.dataframe(raw_df.round(2), width="stretch", height=320)
+    st.dataframe(raw_df.round(2).rename(columns=t["data_columns"]), width="stretch", height=320)
