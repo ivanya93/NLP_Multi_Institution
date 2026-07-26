@@ -616,11 +616,9 @@ with tab_chat:
     render_chat(df, raw_df, KPI_LABELS, TARGET_COVERAGE, lang)
 
 # ------------------------------------------------------------------------ data
-# Escape hatch: the full filtered KPI table and the complete (unfiltered)
-# raw extraction, for anyone who wants to eyeball the underlying numbers
-# rather than a chart.
+# Escape hatch: the complete (unfiltered) raw extraction, for anyone who
+# wants to eyeball the underlying numbers rather than a chart.
+# Remove the KPI-label renaming and rounding
 with tab_data:
-    st.markdown(f"### {t['kpi_table_title']}")
-    st.dataframe(df.round(2).rename(columns=t["data_columns"]), width="stretch", height=420)
     st.markdown(f"### {t['raw_data_title']}")
-    st.dataframe(raw_df.round(2).rename(columns=t["data_columns"]), width="stretch", height=320)
+    st.dataframe(raw_df.round(2).rename(columns=t["data_columns"]), width="stretch", height=420)
