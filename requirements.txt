@@ -1,6 +1,7 @@
 # Dependencies for the Streamlit app (used by Streamlit Community Cloud).
 # For the full notebook/pipeline dev environment, see requirements-notebook.txt.
 streamlit>=1.60
+altair>=5.0
 pandas>=2.0
 numpy>=1.26
 anthropic>=0.86
