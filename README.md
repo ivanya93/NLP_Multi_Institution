@@ -6,7 +6,7 @@ Extracts KPIs from Portuguese IPSS financial filings (OCIP) and presents them in
 
 ## Context
 
-[CNIS](https://cnis.pt) represents IPSS (Instituições Particulares de Solidariedade Social) in Portugal and negotiates with the Ministry of Labour, Solidarity and Social Security over the public funding these institutions receive per social response (*resposta social* — e.g. elderly care, childcare), under the *Compromisso de Cooperação para o Setor Social e Solidário*.
+The Confederation represents IPSS (Instituições Particulares de Solidariedade Social) in Portugal and negotiates with the Ministry of Labour, Solidarity and Social Security over the public funding these institutions receive per social response (*resposta social* — e.g. elderly care, childcare), under the *Compromisso de Cooperação para o Setor Social e Solidário*.
 
 To ground those negotiations in data, this project extracts financial statements from the **OCIP** ("Conta de Gerência") PDFs institutions submit to Social Security — income statements, staffing, and identification data, broken down by social response — and turns them into comparable KPIs across institutions and regions.
 
@@ -91,6 +91,26 @@ python pipeline.py data/PDF_files data/outputs
 ```
 
 (Scanned/no-text-layer PDFs require the system Tesseract OCR engine with the Portuguese language pack: `tesseract-ocr` + `tesseract-ocr-por`.)
+
+## Running with Docker
+
+No local Python setup needed:
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:8501>.
+
+The source files are bind-mounted into the container, so editing `app.py`, `i18n.py` or
+`data_agent.py` reloads the app in the browser automatically — no rebuild, no restart.
+Rebuild only when `requirements.txt` changes. Stop with `docker compose down`.
+
+The image covers the dashboard only; `pipeline.py` still runs locally, since PDF extraction
+needs the system Tesseract packages listed above. The AI assistant tab shows a
+"missing key" warning unless you configure `ANTHROPIC_API_KEY` — note that `st.secrets`
+reads `.streamlit/secrets.toml`, not environment variables, so passing `-e` alone has no
+effect.
 
 ## Deploying on Streamlit Community Cloud
 

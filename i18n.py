@@ -68,7 +68,7 @@ TRANSLATIONS = {
         "downloads_header": "Downloads",
         "kpi_csv_button": "KPI table (CSV)",
         "raw_csv_button": "Full raw data (CSV)",
-        "footer_caption": "CNIS · NLP Group Project · Porto Business School",
+        "footer_caption": "Confederation · NLP Group Project · Porto Business School",
         "no_data_warning": "No records match the current filters.",
         "missing_outputs_error": (
             "KPI outputs not found. Run `python pipeline.py data/PDF_files "
@@ -141,7 +141,7 @@ TRANSLATIONS = {
             "source_file": "Source File",
             "page": "Page",
             "resposta_social": "Social Response",
-            "equipamento": "Equipment",
+            "equipment_id": "Equipment ID",
             "tipo_acordo": "Agreement Type",
             "n_medio_utentes": "Avg Users No.",
             "n_medio_funcionarios": "Avg Staff No.",
@@ -276,7 +276,7 @@ TRANSLATIONS = {
         "downloads_header": "Transferências",
         "kpi_csv_button": "Tabela de KPIs (CSV)",
         "raw_csv_button": "Dados brutos completos (CSV)",
-        "footer_caption": "CNIS · Projeto de Grupo NLP · Porto Business School",
+        "footer_caption": "Confederação · Projeto de Grupo NLP · Porto Business School",
         "no_data_warning": "Nenhum registo corresponde aos filtros atuais.",
         "missing_outputs_error": (
             "Não foram encontrados os resultados dos KPIs. Execute primeiro "
@@ -349,7 +349,7 @@ TRANSLATIONS = {
             "source_file": "Ficheiro de Origem",
             "page": "Página",
             "resposta_social": "Resposta Social",
-            "equipamento": "Equipamento",
+            "equipment_id": "ID Equipamento",
             "tipo_acordo": "Tipo de Acordo",
             "n_medio_utentes": "Nr. Médio Utentes",
             "n_medio_funcionarios": "Nr. Médio Funcionários",
