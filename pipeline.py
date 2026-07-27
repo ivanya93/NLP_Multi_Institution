@@ -8,7 +8,7 @@ social service they run (elderly care, childcare, etc. — a "resposta
 social"). This script reads a whole folder of those PDFs, pulls out the
 numbers that matter (revenue, cost, staff, Social Security funding — per
 service, per institution), double-checks the numbers add up correctly, and
-turns them into the KPIs CNIS uses in funding negotiations. The final
+turns them into the KPIs the Confederation uses in funding negotiations. The final
 output is three CSV files the Streamlit dashboard (app.py) reads directly.
 
 WHAT THIS FILE DOES (technical)
@@ -22,9 +22,9 @@ computation -> anonymization -> CSV export. Run standalone:
 
     python pipeline.py data/PDF_files data/outputs
 
-Only the elderly-care and childcare social responses relevant to CNIS's
-current analysis are kept (see ALLOWED_ACTIVITIES) — everything else
-(canteens, volunteering programmes, etc.) is dropped after validation.
+Only the elderly-care and childcare social responses relevant to the
+Confederation's current analysis are kept (see ALLOWED_ACTIVITIES) — everything
+else (canteens, volunteering programmes, etc.) is dropped after validation.
 """
 
 import hashlib
@@ -398,7 +398,7 @@ def match_comparticipacao(resposta_social_name, comparticipacoes_by_name):
 # ---------------------------------------------------------------------------
 # Each institution can report many "Resposta Social/Atividade" lines
 # (canteens, volunteering programmes, etc.) that aren't relevant to this
-# analysis. CNIS's current focus is:
+# analysis. The Confederation's current focus is:
 #   - Elderly care: ERPI (residential), SAD (home support), Centro de Dia
 #   - Childcare / nursery: Creche, Pré-Escolar
 # Matching is done on the stripped name (via strip_code_prefix, e.g.
@@ -556,7 +556,7 @@ def validate_institution(beneficiary_records, aggregate_record, institution_name
 # ---------------------------------------------------------------------------
 # 10. KPI computation
 # ---------------------------------------------------------------------------
-# The KPIs CNIS uses in negotiations, vectorised across every
+# The KPIs the Confederation uses in negotiations, vectorised across every
 # institution/beneficiary row at once. Social-security funding uses
 # ss_funding_authoritative (falling back to subsidios_publicos only if no
 # comparticipações match was found), per the finding in section 6 above.
@@ -684,8 +684,8 @@ def run_batch(pdf_folder):
 # consistently group an institution's rows together across tabs and reruns —
 # but the hash is not salted, so anyone with a NISS list could re-identify
 # institutions by recomputing the hash. That's an accepted tradeoff for this
-# internal CNIS tool; do not treat these IDs as a strong anonymity guarantee if
-# this data is ever shared outside the team.
+# internal Confederation tool; do not treat these IDs as a strong anonymity
+# guarantee if this data is ever shared outside the team.
 #
 # Equipment names had to be hashed too: the OCIP "Equipamento:" field is mostly
 # the generic "1 - SEDE", but satellite facilities carry their real name (e.g.

@@ -21,6 +21,7 @@ both its own labels and the instruction it gives the model.
 """
 
 import json
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -164,16 +165,15 @@ TOOLS_SCHEMA = [
 # The model's instructions. `{language_instruction}` is filled in at render
 # time from i18n.py so the same prompt drives both an English-only and a
 # Portuguese-only assistant depending on the dashboard's language toggle.
-SYSTEM_TEMPLATE = """You are the data analyst of CNIS (Confederação Nacional das Instituições
-de Solidariedade), which represents Portuguese IPSS. You analyze a KPI table
-extracted from OCIP filings (income statements by social response / 'resposta
-social', per institution).
+SYSTEM_TEMPLATE = """You are the data analyst of the Confederation, which represents
+Portuguese IPSS. You analyze a KPI table extracted from OCIP filings (income
+statements by social response / 'resposta social', per institution).
 
-Context: CNIS negotiates with the Ministry of Labour, Solidarity and Social
-Security (via the Compromisso de Cooperação) aiming for Social Security funding
-of at least 50% of total cost per beneficiary, per social response. All monetary
-values are EUR per month unless stated otherwise. Institutions are anonymized
-(INST_xxxx).
+Context: the Confederation negotiates with the Ministry of Labour, Solidarity
+and Social Security (via the Compromisso de Cooperação) aiming for Social
+Security funding of at least 50% of total cost per beneficiary, per social
+response. All monetary values are EUR per month unless stated otherwise.
+Institutions and their equipment are anonymized (INST_xxxx, EQUIP_xxxx).
 
 Rules:
 - Always fetch real numbers with your tools; never invent values.
@@ -181,11 +181,77 @@ Rules:
   coverage_gap_report and build arguments from the actual gaps.
 - Be specific: cite the social response, the € values, and the coverage %.
 - Note limitations honestly (small sample, medians, one filing year) when relevant.
+- Never name the Confederation or spell out its acronym or legal name, even if
+  the user names it first or asks you directly. Always call it "the
+  Confederation" / "a Confederação". The same applies to institution and
+  equipment names: only ever refer to them by their anonymized IDs.
 - {language_instruction}"""
 
 
+# --------------------------------------------------------- anonymization guard
+# The rule above tells the model never to name the Confederation, but that is
+# probabilistic — the model knows the sector and can still emit the real name,
+# especially in long Portuguese answers or when the user names it first. This is
+# the deterministic backstop, applied to every answer before it is displayed.
+#
+# The acronym and the full legal name, accents optional (the model does drop
+# them) and tolerant of the line breaks it may wrap the name in.
+_ORG_NAME = (r"Confedera[cç][aã]o\s+Nacional\s+das\s+Institui[cç][oõ]es"
+             r"\s+de\s+Solidariedade|CNIS")
+
+# Order matters: the article and contraction forms have to be consumed before
+# the bare form, otherwise "do CNIS" would come out as "do a Confederação".
+# The optional "(?:[oa]\s+)?" absorbs the article in "do o CNIS"-style hits and
+# in "da Confederação Nacional ...", where the name already carries its own.
+_ORG_SUBS = {
+    "pt": [
+        (rf"\b[Dd](?:o|a|e)\s+(?:[oa]\s+)?(?:{_ORG_NAME})\b", "da Confederação"),
+        (rf"\b[Nn](?:o|a)\s+(?:[oa]\s+)?(?:{_ORG_NAME})\b", "na Confederação"),
+        (rf"\b[Pp]el(?:o|a)\s+(?:[oa]\s+)?(?:{_ORG_NAME})\b", "pela Confederação"),
+        (rf"\b[Aa]o\s+(?:[oa]\s+)?(?:{_ORG_NAME})\b", "à Confederação"),
+        (rf"[Àà]\s+(?:[oa]\s+)?(?:{_ORG_NAME})\b", "à Confederação"),
+        (rf"\b[OoAa]\s+(?:{_ORG_NAME})\b", "a Confederação"),
+        (rf"\b(?:{_ORG_NAME})\b", "a Confederação"),
+    ],
+    "en": [
+        (rf"\b[Tt]he\s+(?:{_ORG_NAME})\b", "the Confederation"),
+        (rf"\b(?:{_ORG_NAME})\b", "the Confederation"),
+    ],
+}
+
+
+def _starts_sentence(text, index):
+    """True if `index` is the first non-space position of a sentence."""
+    before = text[:index].rstrip()
+    return not before or before[-1] in ".!?:;\n•-"
+
+
+def scrub_org_name(text, lang="en"):
+    """Replace every mention of the client organization with a generic label.
+
+    Applied to the model's final answer (and therefore also to whatever the
+    user downloads as a conversation transcript), so the real name cannot
+    reach the screen even if the model ignores its instructions.
+
+    Capitalization follows sentence position, not the matched text: the
+    acronym is upper-case wherever it appears, so copying its case would
+    produce "Data from The Confederation shows ...".
+    """
+    if not text:
+        return text
+
+    def _replace(match, replacement):
+        if _starts_sentence(match.string, match.start()):
+            return replacement[0].upper() + replacement[1:]
+        return replacement
+
+    for pattern, replacement in _ORG_SUBS.get(lang, _ORG_SUBS["en"]):
+        text = re.sub(pattern, lambda m, r=replacement: _replace(m, r), text)
+    return text
+
+
 # ---------------------------------------------------------------------- agent
-def _run_agent(client, system, user_message, history, impl):
+def _run_agent(client, system, user_message, history, impl, lang="en"):
     """The tool-use loop: ask Claude for a response; if it wants to call a
     tool, run it locally and send the result back; repeat until Claude
     replies with plain text instead of a tool call. `history` is the prior
@@ -199,7 +265,11 @@ def _run_agent(client, system, user_message, history, impl):
         )
         if response.stop_reason != "tool_use":
             # Model is done calling tools and has written its final answer.
-            return "".join(b.text for b in response.content if b.type == "text")
+            # Scrubbed here rather than at the call site so every path that
+            # consumes an answer (display, history, transcript download) gets
+            # the anonymized text.
+            answer = "".join(b.text for b in response.content if b.type == "text")
+            return scrub_org_name(answer, lang)
 
         # Model asked to call one or more tools in this turn — run each one
         # locally and package the results the way the API expects them back.
@@ -272,7 +342,7 @@ def render_chat(df, raw_df, kpi_labels, target, lang="en"):
         with st.chat_message("assistant"):
             with st.spinner(t["chat_spinner"]):
                 try:
-                    answer = _run_agent(client, system, prompt, st.session_state.chat_history, impl)
+                    answer = _run_agent(client, system, prompt, st.session_state.chat_history, impl, lang)
                 except Exception as e:
                     # e.g. API key invalid, rate limit, network error — show
                     # it in the chat itself rather than an unhandled crash.

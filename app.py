@@ -158,7 +158,7 @@ st.markdown(
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "data" / "outputs"
 
-# Negotiation benchmark from the project brief: CNIS wants Social Security
+# Negotiation benchmark from the project brief: the Confederation wants Social Security
 # funding to cover at least 50% of the cost per beneficiary, per social
 # response. This single constant drives the "target" callouts across the
 # whole dashboard (metrics, chart captions, chatbot system prompt).

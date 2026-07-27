@@ -68,7 +68,7 @@ TRANSLATIONS = {
         "downloads_header": "Downloads",
         "kpi_csv_button": "KPI table (CSV)",
         "raw_csv_button": "Full raw data (CSV)",
-        "footer_caption": "CNIS · NLP Group Project · Porto Business School",
+        "footer_caption": "Confederation · NLP Group Project · Porto Business School",
         "no_data_warning": "No records match the current filters.",
         "missing_outputs_error": (
             "KPI outputs not found. Run `python pipeline.py data/PDF_files "
@@ -276,7 +276,7 @@ TRANSLATIONS = {
         "downloads_header": "Transferências",
         "kpi_csv_button": "Tabela de KPIs (CSV)",
         "raw_csv_button": "Dados brutos completos (CSV)",
-        "footer_caption": "CNIS · Projeto de Grupo NLP · Porto Business School",
+        "footer_caption": "Confederação · Projeto de Grupo NLP · Porto Business School",
         "no_data_warning": "Nenhum registo corresponde aos filtros atuais.",
         "missing_outputs_error": (
             "Não foram encontrados os resultados dos KPIs. Execute primeiro "
