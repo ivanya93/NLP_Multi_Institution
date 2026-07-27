@@ -676,21 +676,28 @@ def run_batch(pdf_folder):
 # ---------------------------------------------------------------------------
 # 12. Anonymization
 # ---------------------------------------------------------------------------
-# Real institution names/NISS never leave this step — every downstream
-# CSV (and everything the Streamlit app or the AI assistant sees) only
-# has the hashed institution_id. This is a *pseudonymization*, not
-# irreversible anonymization: the same NISS always hashes to the same ID,
-# which is what lets the "Institution Explorer" tab consistently group an
-# institution's rows together across tabs and reruns — but the hash is not
-# salted, so anyone with a NISS list could re-identify institutions by
-# recomputing the hash. That's an accepted tradeoff for this internal CNIS
-# tool; do not treat institution_id as a strong anonymity guarantee if this
-# data is ever shared outside the team.
+# Real institution names/NISS and real equipment (facility) names never leave
+# this step — every downstream CSV (and everything the Streamlit app or the AI
+# assistant sees) only has the hashed institution_id and equipment_id. This is
+# a *pseudonymization*, not irreversible anonymization: the same NISS always
+# hashes to the same ID, which is what lets the "Institution Explorer" tab
+# consistently group an institution's rows together across tabs and reruns —
+# but the hash is not salted, so anyone with a NISS list could re-identify
+# institutions by recomputing the hash. That's an accepted tradeoff for this
+# internal CNIS tool; do not treat these IDs as a strong anonymity guarantee if
+# this data is ever shared outside the team.
+#
+# Equipment names had to be hashed too: the OCIP "Equipamento:" field is mostly
+# the generic "1 - SEDE", but satellite facilities carry their real name (e.g.
+# "2000 - CENTRO SOCIAL PAROQUIAL ..."), which names the institution outright
+# and would otherwise defeat the institution_id hash.
 
-def anonymize_institutions(df, niss_col="niss", name_col="nome_instituicao"):
-    """Replace NISS + institution name with a stable pseudonymous ID.
-    Same institution -> same ID across runs (derived from NISS hash),
-    but the original NISS/name are not retained in the output."""
+def anonymize_institutions(df, niss_col="niss", name_col="nome_instituicao",
+                           equip_col="equipamento"):
+    """Replace NISS + institution name + equipment name with stable
+    pseudonymous IDs. Same institution -> same ID across runs (derived from
+    the NISS hash); same equipment within that institution -> same ID. The
+    original NISS/names are not retained in the output."""
     df = df.copy()
 
     def pseudo_id(niss):
@@ -701,7 +708,27 @@ def anonymize_institutions(df, niss_col="niss", name_col="nome_instituicao"):
 
     df["institution_id"] = df[niss_col].apply(pseudo_id)
     df = df.drop(columns=[niss_col, name_col])
+
+    # Derived from institution_id (not the raw NISS) so that the same mapping
+    # can be reproduced from an already-anonymized CSV. Scoped per institution:
+    # every institution's "1 - SEDE" is a different physical site, so they must
+    # not collapse onto a single shared ID.
+    if equip_col in df.columns:
+        df["equipment_id"] = [
+            pseudo_equipment_id(inst_id, equipamento)
+            for inst_id, equipamento in zip(df["institution_id"], df[equip_col])
+        ]
+        df = df.drop(columns=[equip_col])
+
     return df
+
+
+def pseudo_equipment_id(institution_id, equipamento):
+    """Stable pseudonymous ID for one equipment (facility) of one institution."""
+    if pd.isna(equipamento):
+        return "EQUIP_UNKNOWN"
+    digest = hashlib.sha256(f"{institution_id}|{equipamento}".encode()).hexdigest()[:8]
+    return f"EQUIP_{digest}"
 
 
 # ---------------------------------------------------------------------------
