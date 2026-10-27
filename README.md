@@ -2,7 +2,7 @@
 
 Extracts KPIs from Portuguese IPSS financial filings (OCIP) and presents them in a bilingual (EN/PT) Streamlit dashboard with an AI assistant — a Natural Language Processing group project for the Executive Master in Business Analytics & AI at Porto Business School.
 
-**Live app:** [nlpmultiinstitution-4shb4sdxyeprkspt3tgrpz.streamlit.app](https://nlpmultiinstitution-4shb4sdxyeprkspt3tgrpz.streamlit.app/)
+**Live app:** [NLP Multi Institution App](https://nlpmultiinstitution-4shb4sdxyeprkspt3tgrpz.streamlit.app/)
 
 ## Context
 
